@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片压缩与转换工具</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 2rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        /* Upload Area */
+        #drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 3rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f1f5f9;
+            margin-bottom: 2rem;
+        }
+
+        #drop-zone.dragover {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+
+        #drop-zone p {
+            color: var(--text-light);
+            font-size: 1.1rem;
+        }
+
+        #drop-zone .sub-text {
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+            opacity: 0.8;
+        }
+
+        /* Controls */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-light);
+        }
+
+        select,
+        input[type="range"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .quality-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
+        }
+
+        /* Preview & Stats */
+        .preview-section {
+            display: none;
+            gap: 2rem;
+            flex-direction: column;
+        }
+
+        .preview-section.active {
+            display: flex;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        .stat-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .stat-header {
+            background: #f1f5f9;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-body {
+            padding: 1rem;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .stat-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .highlight {
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .preview-img-container {
+            height: 250px;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 10px 10px;
+            background-color: #f8fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-top: 1px solid var(--border);
+        }
+
+        .preview-img-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        button {
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-outline {
+            background: white;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-outline:hover {
+            background: #f1f5f9;
+        }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 41, 59, 0.9);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #toast.show {
+            opacity: 1;
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>图片压缩与转换工具</h1>
+
+        <div id="drop-zone">
+            <p>直接粘贴图片 (Ctrl+V) 或点击上传</p>
+            <p class="sub-text">支持 JPG, PNG, WebP</p>
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
+        </div>
+
+        <div id="app-interface" style="display: none;">
+
+            <div class="controls">
+                <div class="control-group">
+                    <label for="format-select">输出格式</label>
+                    <select id="format-select">
+                        <option value="image/jpeg">JPG (JPEG)</option>
+                        <option value="image/png">PNG (无损/透明)</option>
+                        <option value="image/webp" selected>WebP (现代格式)</option>
+                    </select>
+                </div>
+
+                <div class="control-group" id="quality-group">
+                    <div class="quality-display">
+                        <label for="quality-range">压缩质量</label>
+                        <span id="quality-value">80%</span>
+                    </div>
+                    <input type="range" id="quality-range" min="0" max="100" value="80">
+                </div>
+            </div>
+
+            <div class="preview-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">原始图片 <span id="tag-original-type"
+                                style="font-weight:normal; font-size:0.8em; color:#64748b"></span></div>
+                        <div class="preview-img-container">
+                            <img id="img-original" src="" alt="Original">
+                        </div>
+                        <div class="stat-body">
+                            <div class="stat-row"><span>尺寸:</span> <span id="stat-orig-res">--</span></div>
+                            <div class="stat-row"><span>体积:</span> <span id="stat-orig-size">--</span></div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            处理后
+                            <span id="tag-new-type" style="font-weight:normal; font-size:0.8em; color:#64748b"></span>
+                        </div>
+                        <div class="preview-img-container">
+                            <img id="img-preview" src="" alt="Preview">
+                        </div>
+                        <div class="stat-body">
+                            <div class="stat-row"><span>尺寸:</span> <span id="stat-new-res">--</span></div>
+                            <div class="stat-row"><span>体积:</span> <span id="stat-new-size" class="highlight">--</span>
+                            </div>
+                            <div class="stat-row"><span>变化:</span> <span id="stat-diff"
+                                    style="font-size: 0.85em">--</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="btn-copy" class="btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        复制到剪贴板
+                    </button>
+                    <button id="btn-download" class="btn-outline">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        下载图片
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">消息提示</div>
+
+    <script>
+        // --- DOM Elements ---
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const appInterface = document.getElementById('app-interface');
+
+        const imgOriginal = document.getElementById('img-original');
+        const imgPreview = document.getElementById('img-preview');
+
+        const formatSelect = document.getElementById('format-select');
+        const qualityRange = document.getElementById('quality-range');
+        const qualityValue = document.getElementById('quality-value');
+        const qualityGroup = document.getElementById('quality-group');
+
+        const btnCopy = document.getElementById('btn-copy');
+        const btnDownload = document.getElementById('btn-download');
+        const toast = document.getElementById('toast');
+
+        // Stats Elements
+        const statOrigRes = document.getElementById('stat-orig-res');
+        const statOrigSize = document.getElementById('stat-orig-size');
+        const statNewRes = document.getElementById('stat-new-res');
+        const statNewSize = document.getElementById('stat-new-size');
+        const statDiff = document.getElementById('stat-diff');
+        const tagOrigType = document.getElementById('tag-original-type');
+        const tagNewType = document.getElementById('tag-new-type');
+
+        // --- State ---
+        let originalFile = null;
+        let originalImage = null; // The Image object
+        let currentBlob = null; // The processed blob
+
+        // --- Event Listeners ---
+
+        // 1. Paste Event (Global)
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    handleFile(blob);
+                    break;
+                }
+            }
+        });
+
+        // 2. Drag & Drop
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        });
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0 && e.dataTransfer.files[0].type.startsWith('image/')) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // 3. Controls Change
+        formatSelect.addEventListener('change', updateUIStateAndProcess);
+        qualityRange.addEventListener('input', (e) => {
+            qualityValue.textContent = e.target.value + '%';
+            // Debounce slightly for performance if needed, currently instant
+            processImage();
+        });
+
+        // 4. Actions
+        btnCopy.addEventListener('click', copyImageToClipboard);
+        btnDownload.addEventListener('click', downloadImage);
+
+        // --- Core Logic ---
+
+        function handleFile(file) {
+            originalFile = file;
+            const url = URL.createObjectURL(file);
+
+            originalImage = new Image();
+            originalImage.onload = () => {
+                // Update Original Stats
+                statOrigRes.textContent = `${originalImage.naturalWidth} x ${originalImage.naturalHeight}`;
+                statOrigSize.textContent = formatBytes(file.size);
+                tagOrigType.textContent = `(${file.type.split('/')[1].toUpperCase()})`;
+                imgOriginal.src = url;
+
+                // Show Interface
+                appInterface.style.display = 'block';
+                dropZone.style.display = 'none'; // Optional: Hide dropzone or keep it small
+
+                // Initial Process
+                updateUIStateAndProcess();
+            };
+            originalImage.src = url;
+        }
+
+        function updateUIStateAndProcess() {
+            const format = formatSelect.value;
+            // PNG doesn't support quality lossy compression in Canvas API standard
+            if (format === 'image/png') {
+                qualityGroup.style.opacity = '0.5';
+                qualityRange.disabled = true;
+            } else {
+                qualityGroup.style.opacity = '1';
+                qualityRange.disabled = false;
+            }
+            processImage();
+        }
+
+        function processImage() {
+            if (!originalImage) return;
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = originalImage.naturalWidth;
+            canvas.height = originalImage.naturalHeight;
+
+            // Draw white background for transparency handling (optional, keeps JPEGs from turning black)
+            if (formatSelect.value === 'image/jpeg') {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            ctx.drawImage(originalImage, 0, 0);
+
+            const format = formatSelect.value;
+            const quality = parseInt(qualityRange.value) / 100;
+
+            canvas.toBlob((blob) => {
+                if (!blob) return;
+                currentBlob = blob;
+                const url = URL.createObjectURL(blob);
+
+                // Update UI
+                imgPreview.src = url;
+                statNewRes.textContent = `${canvas.width} x ${canvas.height}`; // Canvas size usually matches
+                statNewSize.textContent = formatBytes(blob.size);
+                tagNewType.textContent = `(${format.split('/')[1].toUpperCase()})`;
+
+                // Calculate diff
+                const diff = blob.size - originalFile.size;
+                const pcent = ((diff / originalFile.size) * 100).toFixed(1);
+                if (diff < 0) {
+                    statDiff.innerHTML = `<span style="color:var(--success)">${pcent}% (节省 ${formatBytes(Math.abs(diff))})</span>`;
+                } else {
+                    statDiff.innerHTML = `<span style="color:var(--danger)">+${pcent}%</span>`;
+                }
+
+            }, format, quality);
+        }
+
+        // --- Utilities ---
+
+        async function copyImageToClipboard() {
+            if (!currentBlob) return;
+
+            try {
+                // Clipboard API requires the blob type to match exactly what is requested
+                // Some browsers are strict about what can be written (PNG is safest)
+                const data = [new ClipboardItem({ [currentBlob.type]: currentBlob })];
+                await navigator.clipboard.write(data);
+                showToast('✅ 已复制到剪贴板');
+            } catch (err) {
+                console.error('Clipboard write failed:', err);
+                // Fallback attempt: If WebP/JPG fails, try converting to PNG for clipboard only
+                if (currentBlob.type !== 'image/png') {
+                    showToast('⚠️ 当前格式剪贴板不支持，尝试以 PNG 复制...');
+                    tryConvertAndCopyPNG();
+                } else {
+                    showToast('❌ 复制失败 (浏览器可能不支持)');
+                }
+            }
+        }
+
+        function tryConvertAndCopyPNG() {
+            const canvas = document.createElement('canvas');
+            canvas.width = originalImage.naturalWidth;
+            canvas.height = originalImage.naturalHeight;
+            canvas.getContext('2d').drawImage(imgPreview, 0, 0); // Draw the *processed* image
+            canvas.toBlob(async (blob) => {
+                try {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                    showToast('✅ 已以 PNG 格式复制');
+                } catch (e) {
+                    showToast('❌ 复制完全失败');
+                }
+            }, 'image/png');
+        }
+
+        function downloadImage() {
+            if (!currentBlob) return;
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(currentBlob);
+            const ext = formatSelect.value.split('/')[1];
+            link.download = `processed_image.${ext}`;
+            link.click();
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Handle Global Drag/Drop to prevent browser opening file
+        window.addEventListener('dragover', e => e.preventDefault());
+        window.addEventListener('drop', e => e.preventDefault());
+    </script>
+
+</body>
+
+</html>

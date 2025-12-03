@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veo 3.1 Demo (Auth Fixed)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader {
+            border-top-color: #3B82F6;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+
+        @keyframes spinner {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .fade-enter {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .fade-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        .fade-exit {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .fade-exit-active {
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.5s ease-in, transform 0.5s ease-in;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
+
+    <nav class="border-b border-gray-700 bg-gray-800 p-4 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                Veo 3.1 Generator
+            </h1>
+            <div class="w-full md:w-auto flex items-center gap-2">
+                <input type="password" id="apiKey" placeholder="输入 Gemini API Key"
+                    class="bg-gray-700 text-sm rounded px-3 py-2 w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 transition border border-gray-600">
+                <a href="https://aistudio.google.com/apikey" target="_blank"
+                    class="text-xs text-blue-400 hover:text-blue-300 whitespace-nowrap">获取 Key</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <div class="lg:col-span-1 space-y-6">
+
+            <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg">
+                <label class="block text-sm font-medium text-gray-400 mb-2">生成模式</label>
+                <select id="generationMode"
+                    class="w-full bg-gray-700 rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600">
+                    <option value="text-to-video">Text to Video (文生视频)</option>
+                    <option value="image-to-video">Image to Video (图生视频)</option>
+                    <option value="reference-images">Reference Images (参考图风格)</option>
+                    <option value="interpolation">Interpolation (首尾帧插值)</option>
+                    <option value="extension">Extension (视频扩展)</option>
+                </select>
+                <p id="modeDesc" class="text-xs text-gray-500 mt-2">通过文本提示词生成视频。</p>
+            </div>
+
+            <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-lg space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">提示词 (Prompt)</label>
+                    <textarea id="prompt" rows="4" placeholder="描述你想要生成的视频画面、动作和风格..."
+                        class="w-full bg-gray-700 rounded p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600 resize-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-400 mb-1">负向提示词 (Negative Prompt)</label>
+                    <input type="text" id="negativePrompt" placeholder="例如: cartoon, blurry, low quality"
+                        class="w-full bg-gray-700 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none border border-gray-600">
+                </div>
+                <div id="dynamicInputs" class="space-y-4"></div>
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">比例</label>
+                        <select id="aspectRatio" class="w-full bg-gray-700 rounded p-2 text-sm border border-gray-600">
+                            <option value="16:9">16:9 (横屏)</option>
+                            <option value="9:16">9:16 (竖屏)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">时长</label>
+                        <select id="duration" class="w-full bg-gray-700 rounded p-2 text-sm border border-gray-600">
+                            <option value="8">8 秒 (标准)</option>
+                        </select>
+                    </div>
+                </div>
+                <button id="generateBtn" onclick="startGeneration()"
+                    class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    生成视频
+                </button>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            <div id="resultContainer"
+                class="flex-grow bg-gray-800 rounded-xl border border-gray-700 flex items-center justify-center relative overflow-hidden min-h-[400px] shadow-lg">
+                <div id="placeholder" class="text-center text-gray-500">
+                    <svg class="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
+                        </path>
+                    </svg>
+                    <p>在左侧配置参数并点击生成</p>
+                </div>
+                <div id="loadingOverlay"
+                    class="absolute inset-0 bg-gray-900/90 z-20 hidden flex flex-col items-center justify-center p-8 text-center">
+                    <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-600 h-12 w-12 mb-4">
+                    </div>
+                    <h3 class="text-lg font-semibold text-white mb-2">正在生成中...</h3>
+                    <p class="text-sm text-blue-300 font-mono mb-6" id="statusLog">Status: Starting...</p>
+                    <div
+                        class="w-full max-w-lg h-24 flex items-center justify-center relative bg-gray-800/50 rounded-lg border border-gray-700 backdrop-blur-sm px-4">
+                        <div class="absolute top-2 left-3">
+                            <p class="text-[10px] text-yellow-500 uppercase font-bold tracking-wider">💡 Veo 使用技巧</p>
+                        </div>
+                        <p id="tipText" class="text-sm text-gray-300 leading-relaxed text-center"></p>
+                    </div>
+                </div>
+                <video id="videoPlayer" controls class="hidden w-full h-full object-contain max-h-[600px]"></video>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- Constants & Tips ---
+        const TIPS = [
+            "Veo 3.1 可生成 8 秒、1080p 分辨率且自带原生音效的视频。",
+            "发抖音/TikTok 选 9:16 竖屏，做电影短片或 YouTube 选 16:9 宽屏。",
+            "快速验证创意用 Fast 版本，追求最终高画质用标准版。",
+            "模型支持原生音频生成，无需后期即可获得背景音、音效和对话。",
+            "万能提示词公式：主体 + 动作 + 风格 + 运镜 + 氛围。",
+            "细节决定成败，用丰富的形容词（如'绝望的男人'）代替简单的名词。",
+            "使用'负面提示词'（Negative Prompt）排除模糊、文字或人群等不需要的元素。",
+            "指定光影氛围（如赛博朋克霓虹、黄金时刻）能大幅提升画面质感。",
+            "描述物体材质（如毛茸茸、金属光泽）可增加生成结果的真实度。",
+            "像导演一样使用运镜术语：推镜头(Dolly in)、航拍(Drone shot)、第一视角(POV)。",
+            "加入'浅景深'或'虚化背景'关键词，轻松获得电影级高级感。",
+            "设定特定镜头风格，如胶片颗粒感、黑白电影或手持摄像机震动感。",
+            "在提示词中使用双引号 \"\" 包裹台词，AI 可生成角色对白。",
+            "文字描述具体声音（如'刺耳的刹车声'）能增强视频沉浸感。",
+            "设定环境音效（如'森林鸟叫'、'街道嘈杂'）以完善听觉氛围。",
+            "图生视频：上传一张图片作为第一帧，让静态照片动起来。",
+            "角色一致性：上传参考图并标记，可保持视频中人物长相不变。",
+            "产品展示：上传商品图片作为参考，确保生成的视频中产品外观不走样。",
+            "风格迁移：上传艺术画作作为参考图，可复刻特定的艺术风格。",
+            "首尾帧控制：同时上传第一张和最后一张图，AI 自动补全中间的过渡过程。",
+            "视频扩展：将生成的 8 秒视频作为输入，可继续续写时长。",
+            "利用遮罩（Mask）功能可重绘视频局部区域，用于去除画面杂物。",
+            "扩展视频时，确保新的提示词与上一段内容逻辑连贯，保证拼接自然。",
+            "系统限制：仅支持生成成年人，无法生成儿童或名人肖像。",
+            "记录 Seed（种子数），用于精确复现或微调同一个满意的视频效果。",
+            "建议先用 720p 快速测试创意，确认满意后再生成 1080p。",
+            "提示词越具体，AI 随机发挥产生的'幻觉'就越少。",
+            "生成的视频自带 SynthID 隐形水印，用于标识 AI 内容，肉眼不可见。",
+            "虽然支持多语言，但使用英文编写提示词通常能获得更精准的效果。",
+            "视频生成计算量大，多尝试几次（抽卡）往往能获得惊喜。"
+        ];
+
+        // --- State ---
+        let currentMode = 'text-to-video';
+        let pollInterval = null;
+        let tipsInterval = null;
+        let currentTipIndex = 0;
+
+        // --- UI Logic ---
+        const modeSelect = document.getElementById('generationMode');
+        const dynamicInputs = document.getElementById('dynamicInputs');
+        const modeDesc = document.getElementById('modeDesc');
+
+        const fileInputTemplate = (id, label, accept = "image/*") => `
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1">${label}</label>
+                <input type="file" id="${id}" accept="${accept}" 
+                    class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-blue-400 hover:file:bg-gray-600 cursor-pointer border border-gray-600 rounded">
+            </div>
+        `;
+
+        const renderInputs = () => {
+            currentMode = modeSelect.value;
+            let html = '';
+            let desc = '';
+
+            switch (currentMode) {
+                case 'text-to-video':
+                    desc = "最基础的模式：仅通过文本描述生成视频。";
+                    break;
+                case 'image-to-video':
+                    desc = "让一张静态图片动起来。图片将作为视频的第一帧。";
+                    html += fileInputTemplate('inputImage', '起始图片 (First Frame)');
+                    break;
+                case 'reference-images':
+                    desc = "上传 1-3 张参考图来控制角色、物体或风格的一致性。";
+                    html += fileInputTemplate('refImg1', '参考图 1 (必须)');
+                    html += fileInputTemplate('refImg2', '参考图 2 (可选)');
+                    html += fileInputTemplate('refImg3', '参考图 3 (可选)');
+                    break;
+                case 'interpolation':
+                    desc = "指定开始和结束的图片，AI 将生成中间的过渡动画。";
+                    html += fileInputTemplate('inputImage', '起始图片 (Start Frame)');
+                    html += fileInputTemplate('lastFrame', '结束图片 (End Frame)');
+                    break;
+                case 'extension':
+                    desc = "上传一个 Veo 生成的视频，并在其后延续生成内容。";
+                    html += fileInputTemplate('inputVideo', 'Veo 原视频 (mp4)', 'video/mp4');
+                    break;
+            }
+            dynamicInputs.innerHTML = html;
+            modeDesc.innerText = desc;
+        };
+
+        modeSelect.addEventListener('change', renderInputs);
+        renderInputs();
+
+        // --- Helper Functions ---
+        const fileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    resolve({ base64, mimeType: file.type });
+                };
+                reader.onerror = error => reject(error);
+            });
+        };
+
+        // --- Tips Logic ---
+        const updateTipDisplay = () => {
+            const tipEl = document.getElementById('tipText');
+            tipEl.classList.remove('fade-enter-active');
+            tipEl.classList.add('fade-exit-active');
+            setTimeout(() => {
+                currentTipIndex = (currentTipIndex + 1) % TIPS.length;
+                tipEl.innerText = TIPS[currentTipIndex];
+                tipEl.classList.remove('fade-exit-active');
+                tipEl.classList.add('fade-enter-active');
+            }, 500);
+        };
+
+        const startTips = () => {
+            if (tipsInterval) clearInterval(tipsInterval);
+            const tipEl = document.getElementById('tipText');
+            currentTipIndex = Math.floor(Math.random() * TIPS.length);
+            tipEl.innerText = TIPS[currentTipIndex];
+            tipEl.classList.add('fade-enter-active');
+            tipsInterval = setInterval(updateTipDisplay, 8000);
+        };
+
+        const stopTips = () => {
+            if (tipsInterval) clearInterval(tipsInterval);
+            tipsInterval = null;
+        };
+
+        const setLoading = (isLoading, statusText = "Starting...") => {
+            const overlay = document.getElementById('loadingOverlay');
+            const btn = document.getElementById('generateBtn');
+            const statusLog = document.getElementById('statusLog');
+            statusLog.innerText = `Status: ${statusText}`;
+
+            if (isLoading) {
+                overlay.classList.remove('hidden');
+                btn.disabled = true;
+                btn.innerText = "生成中...";
+                btn.classList.add('opacity-50');
+                startTips();
+            } else {
+                overlay.classList.add('hidden');
+                btn.disabled = false;
+                btn.innerText = "生成视频";
+                btn.classList.remove('opacity-50');
+                stopTips();
+                if (pollInterval) clearInterval(pollInterval);
+            }
+        };
+
+        // --- API Interaction ---
+        async function startGeneration() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            if (!apiKey) { alert("请先输入 API Key"); return; }
+            const prompt = document.getElementById('prompt').value.trim();
+            if (!prompt) { alert("请输入提示词"); return; }
+
+            setLoading(true, "Preparing payload...");
+
+            // Endpoint (Generative Language API)
+            const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning";
+
+            let instanceObj = { prompt: prompt };
+
+            let paramsObj = {
+                aspectRatio: document.getElementById('aspectRatio').value,
+                negativePrompt: document.getElementById('negativePrompt').value,
+            };
+
+            const createMediaObj = (data) => ({
+                bytesBase64Encoded: data.base64,
+                mimeType: data.mimeType
+            });
+
+            try {
+                // 1. Image to Video
+                if (currentMode === 'image-to-video' || currentMode === 'interpolation') {
+                    const imgInput = document.getElementById('inputImage');
+                    if (imgInput.files.length > 0) {
+                        const imgData = await fileToBase64(imgInput.files[0]);
+                        instanceObj.image = createMediaObj(imgData);
+                    } else { throw new Error("请上传起始图片"); }
+                }
+
+                // 2. Interpolation
+                if (currentMode === 'interpolation') {
+                    const lastFrameInput = document.getElementById('lastFrame');
+                    if (lastFrameInput.files.length > 0) {
+                        const imgData = await fileToBase64(lastFrameInput.files[0]);
+                        instanceObj.lastFrame = createMediaObj(imgData);
+                    } else { throw new Error("插值模式需要上传结束图片"); }
+                }
+
+                // 3. Reference Images
+                if (currentMode === 'reference-images') {
+                    const refs = [];
+                    for (let i = 1; i <= 3; i++) {
+                        const el = document.getElementById(`refImg${i}`);
+                        if (el && el.files.length > 0) {
+                            const data = await fileToBase64(el.files[0]);
+                            refs.push({
+                                image: createMediaObj(data),
+                                referenceType: "asset"
+                            });
+                        }
+                    }
+                    if (refs.length === 0) throw new Error("至少需要上传一张参考图");
+                    instanceObj.referenceImages = refs;
+                }
+
+                // 4. Extension
+                if (currentMode === 'extension') {
+                    const vidInput = document.getElementById('inputVideo');
+                    if (vidInput.files.length > 0) {
+                        const vidData = await fileToBase64(vidInput.files[0]);
+                        instanceObj.video = createMediaObj(vidData);
+                    } else { throw new Error("扩展模式需要上传原视频"); }
+                }
+
+                const payload = {
+                    instances: [instanceObj],
+                    parameters: paramsObj
+                };
+
+                console.log("Payload:", payload);
+
+                setLoading(true, "Sending request...");
+
+                const response = await fetch(`${BASE_URL}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error?.message || "Failed to start generation");
+                }
+
+                const data = await response.json();
+                const operationName = data.name;
+                console.log("Operation started:", operationName);
+                pollOperation(operationName, apiKey);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error: " + error.message);
+                setLoading(false);
+            }
+        }
+
+        async function pollOperation(operationName, apiKey) {
+            const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${apiKey}`;
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const statusLog = document.getElementById('statusLog');
+                    statusLog.innerText = "Status: Rendering video...";
+
+                    const res = await fetch(pollUrl);
+                    const opData = await res.json();
+
+                    if (opData.error) throw new Error(opData.error.message);
+
+                    if (opData.done) {
+                        clearInterval(pollInterval);
+                        handleSuccess(opData);
+                    }
+                } catch (e) {
+                    clearInterval(pollInterval);
+                    alert("Polling Error: " + e.message);
+                    setLoading(false);
+                }
+            }, 5000);
+        }
+
+        // --- Optimized Success Handler with 403 Fix ---
+        function handleSuccess(data) {
+            const statusLog = document.getElementById('statusLog');
+            statusLog.innerText = "Status: 正在加载视频数据 (Downloading)...";
+
+            const tipText = document.getElementById('tipText');
+            tipText.innerText = "生成成功！正在缓冲视频流，请稍候...";
+
+            const samples = data.response?.generateVideoResponse?.generatedSamples;
+
+            if (!samples || samples.length === 0) {
+                setLoading(false);
+                alert("生成完成，但没有找到视频数据。");
+                return;
+            }
+
+            const videoInfo = samples[0].video;
+            const videoUri = videoInfo.uri;
+            const player = document.getElementById('videoPlayer');
+
+            if (videoUri) {
+                // --- Fix 403 Error: Append API Key to fetch URL ---
+                const apiKey = document.getElementById('apiKey').value.trim();
+                // 智能判断 URL 是否已有参数，正确拼接 key
+                const fetchUrl = `${videoUri}${videoUri.includes('?') ? '&' : '?'}key=${apiKey}`;
+
+                fetch(fetchUrl)
+                    .then(r => {
+                        if (!r.ok) throw new Error(`HTTP Error: ${r.status}`);
+                        return r.blob();
+                    })
+                    .then(blob => {
+                        const url = URL.createObjectURL(blob);
+
+                        document.getElementById('placeholder').classList.add('hidden');
+                        player.classList.remove('hidden');
+
+                        player.src = url;
+
+                        player.onloadeddata = () => {
+                            setLoading(false);
+                            player.play().catch(e => console.log("Autoplay blocked", e));
+                        };
+
+                        setTimeout(() => setLoading(false), 1000);
+                    })
+                    .catch((err) => {
+                        console.error("视频流加载失败", err);
+                        // Fallback: 如果 fetch 失败，尝试直接使用带 key 的链接
+                        player.src = fetchUrl;
+                        player.classList.remove('hidden');
+                        setLoading(false);
+                    });
+            } else {
+                setLoading(false);
+                alert("未获取到视频 URI");
+            }
+        }
+    </script>
+</body>
+
+</html>
