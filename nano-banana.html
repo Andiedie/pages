@@ -265,6 +265,7 @@
         let chatHistory = []; // Stores the full conversation context
         let uploadedImages = []; // Stores base64 images for the current turn
         let isGenerating = false;
+        let editingTargetIndex = null; // Index of the user message being edited
         let timerInterval;
         let tipsInterval;
 
@@ -299,7 +300,16 @@
             promptInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
+                    // Prevent submit if purely empty (unless has images)
+                    if (!promptInput.value.trim() && uploadedImages.length === 0) return;
                     handleGenerate();
+                }
+            });
+
+            // Escape to cancel edit
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && editingTargetIndex !== null) {
+                    cancelEdit();
                 }
             });
 
@@ -364,7 +374,6 @@
             renderImagePreviews();
         }
 
-        // --- Main Generation Logic ---
         async function handleGenerate() {
             const text = promptInput.value.trim();
             const apiKey = apiKeyInput.value.trim();
@@ -384,52 +393,62 @@
             startLoading();
             const currentModel = modelSelect.value;
 
-            // Add User Message to Chat UI
-            appendMessage('user', text, uploadedImages.map(i => i.preview));
-
-            // Construct Payload
-            const userParts = [];
-            if (text) userParts.push({ text: text });
-            uploadedImages.forEach(img => {
-                userParts.push({
-                    inline_data: {
-                        mime_type: img.mime_type,
-                        data: img.data
-                    }
-                });
-            });
-
-            const currentTurn = {
-                role: "user",
-                parts: userParts
-            };
-
-            // Build request body with history
-            const contents = [...chatHistory, currentTurn];
-
-            const config = {
-                responseModalities: document.getElementById('imageOnly').checked ? ["IMAGE"] : ["TEXT", "IMAGE"],
-                imageConfig: {
-                    aspectRatio: document.getElementById('aspectRatio').value
-                }
-            };
-
-            // Pro specific configs
-            if (currentModel === 'gemini-3-pro-image-preview') {
-                config.imageConfig.imageSize = document.getElementById('imageSize').value;
-            }
-
-            const payload = {
-                contents: contents,
-                generationConfig: config
-            };
-
-            // Grounding (Pro only)
-            if (currentModel === 'gemini-3-pro-image-preview' && document.getElementById('useGrounding').checked) {
-                payload.tools = [{ google_search: {} }];
-            }
-
             try {
+                // If editing, truncate history up to the edit point
+                if (editingTargetIndex !== null) {
+                    // editingTargetIndex points to the user message in chatHistory
+                    // We remove everything from that index onwards
+                    chatHistory = chatHistory.slice(0, editingTargetIndex);
+                    // Reset edit state
+                    cancelEdit(false); // pass false to not clear input since we use it below
+                }
+
+                // Construct Current Turn
+                const userParts = [];
+                if (text) userParts.push({ text: text });
+                uploadedImages.forEach(img => {
+                    userParts.push({
+                        inline_data: {
+                            mime_type: img.mime_type,
+                            data: img.data
+                        }
+                    });
+                });
+
+                const currentTurn = {
+                    role: "user",
+                    parts: userParts
+                };
+
+                // Add to history NOW, so renderChat shows it
+                chatHistory.push(currentTurn);
+                renderChat(); 
+
+                // Build request contents
+                const contents = [...chatHistory]; // Already includes currentTurn
+
+                const config = {
+                    responseModalities: document.getElementById('imageOnly').checked ? ["IMAGE"] : ["TEXT", "IMAGE"],
+                    imageConfig: {
+                        aspectRatio: document.getElementById('aspectRatio').value
+                    }
+                };
+
+                // Pro specific configs
+                if (currentModel === 'gemini-3-pro-image-preview') {
+                    config.imageConfig.imageSize = document.getElementById('imageSize').value;
+                }
+
+                const payload = {
+                    contents: contents,
+                    generationConfig: config
+                };
+
+                // Grounding (Pro only)
+                if (currentModel === 'gemini-3-pro-image-preview' && document.getElementById('useGrounding').checked) {
+                    payload.tools = [{ google_search: {} }];
+                }
+
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -446,14 +465,9 @@
                 const candidate = data.candidates?.[0];
                 if (!candidate) throw new Error('No content generated');
 
-                // Render Model Response
-                appendModelResponse(candidate.content.parts);
-
-                // Update History (IMPORTANT for multi-turn)
-                // Add user turn
-                chatHistory.push(currentTurn);
-                // Add model turn (keep exactly as received including thought_signature)
+                // Add model turn
                 chatHistory.push(candidate.content);
+                renderChat();
 
                 // Cleanup
                 promptInput.value = '';
@@ -464,23 +478,160 @@
             } catch (error) {
                 console.error(error);
                 appendError(error.message);
+                // Note: If error occurs, the user message is already in history. 
+                // We might want to pop it if we encourage retry, but keeping it allows simple "Regenerate".
+                // For now, simple error display.
             } finally {
                 stopLoading();
                 isGenerating = false;
             }
         }
 
+        // --- Edit Logic ---
+
+        function startEditing(index) {
+            if (isGenerating) return;
+
+            const turn = chatHistory[index];
+            if (!turn || turn.role !== 'user') return;
+
+            editingTargetIndex = index;
+
+            // Restore text
+            const textPart = turn.parts.find(p => p.text);
+            if (textPart) {
+                promptInput.value = textPart.text;
+                // Trigger auto-resize
+                promptInput.style.height = 'auto';
+                promptInput.style.height = (promptInput.scrollHeight) + 'px';
+            } else {
+                promptInput.value = '';
+            }
+
+            // Note: We are currently NOT restoring images to the upload queue to keep it simple,
+            // as re-converting base64 to file objects specifically is tricky and user might just want to edit text.
+            // If they want to keep images, they are effectively "re-sending" them if they are in the history? 
+            // Actually, if we truncate, those images are GONE from history.
+            // So if we edit a message with images, we strictly should restore them.
+            // Let's at least try to restore them to `uploadedImages` state if possible, 
+            // or warn user? 
+            // For now, we will handle text editing primarily. 
+            // If the message had images, they are lost if not re-added.
+            // Improvement: Check for inline_data and restore to uploadedImages.
+            
+            uploadedImages = [];
+            turn.parts.forEach(p => {
+                if (p.inline_data) {
+                    // metadata for API
+                    uploadedImages.push({
+                        mime_type: p.inline_data.mime_type,
+                        data: p.inline_data.data,
+                        preview: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}`
+                    });
+                }
+            });
+            renderImagePreviews();
+
+            // UI updates
+            document.getElementById('sendBtn').innerHTML = `
+                <span>更新 & 提交</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            `;
+            document.getElementById('sendBtn').classList.replace('bg-blue-600', 'bg-purple-600');
+            document.getElementById('sendBtn').classList.replace('hover:bg-blue-500', 'hover:bg-purple-500');
+            
+            promptInput.focus();
+            
+            // Show a toast or indicator?
+            const toast = document.createElement('div');
+            toast.id = 'editToast';
+            toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-purple-900/90 text-white px-4 py-2 rounded-full text-sm shadow-lg z-50 flex items-center gap-2 animate-bounce';
+            toast.innerHTML = `<span>正在编辑之前的消息 (按 Esc 取消)</span> <button onclick="cancelEdit()" class="hover:text-gray-300">✕</button>`;
+            if(!document.getElementById('editToast')) document.body.appendChild(toast);
+        }
+
+        function cancelEdit(clearInput = true) {
+            editingTargetIndex = null;
+            if (clearInput) {
+                promptInput.value = '';
+                uploadedImages = [];
+                renderImagePreviews();
+                promptInput.style.height = 'auto';
+            }
+            
+            // Reset Button
+            const btn = document.getElementById('sendBtn');
+            btn.innerHTML = `
+                <span>生成</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            `;
+            btn.classList.replace('bg-purple-600', 'bg-blue-600');
+            btn.classList.replace('hover:bg-purple-500', 'hover:bg-blue-500');
+
+            // Remove toast
+            const toast = document.getElementById('editToast');
+            if(toast) toast.remove();
+        }
+
         // --- UI Rendering Helpers ---
 
-        function appendMessage(role, text, images = []) {
+        function renderChat() {
+            chatContainer.innerHTML = '';
+             // Always show welcome if history is empty? 
+             // Logic in original code only had welcome hardcoded in HTML.
+             // We should preserve the welcome message if possible or re-render it.
+             // The original HTML had the welcome message inside #chatContainer.
+             // Since we clear #chatContainer, we lose it.
+             // Let's add it back if history is empty, or just render history.
+             
+             if (chatHistory.length === 0) {
+                 chatContainer.innerHTML = `
+                <div class="flex gap-4 max-w-3xl mx-auto">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shrink-0">AI</div>
+                    <div class="space-y-2">
+                        <div class="bg-slate-800 p-4 rounded-lg rounded-tl-none shadow text-sm leading-relaxed">
+                            <p>👋 嗨！我是你的 Gemini 图像助手。我可以帮你生成、编辑图片，或者进行风格迁移。</p>
+                            <ul class="list-disc pl-5 mt-2 text-slate-400">
+                                <li><strong>文生图</strong>：描述你想要的画面。</li>
+                                <li><strong>图生图/编辑</strong>：上传图片并告诉我怎么修改 (例如："给猫戴上帽子")。</li>
+                                <li><strong>风格迁移</strong>：上传照片并要求变成 "梵高风格"。</li>
+                            </ul>
+                            <p class="mt-2 text-xs text-slate-500">提示：使用 Gemini 3 Pro 可以获得更高的细节和文字渲染能力。</p>
+                        </div>
+                    </div>
+                </div>`;
+                return;
+             }
+
+             chatHistory.forEach((turn, index) => {
+                 if (turn.role === 'user') {
+                     renderUserTurn(turn, index);
+                 } else {
+                     renderModelTurn(turn);
+                 }
+             });
+             scrollToBottom();
+        }
+
+        function renderUserTurn(turn, index) {
             const div = document.createElement('div');
-            div.className = `flex gap-4 max-w-3xl mx-auto ${role === 'user' ? 'justify-end' : ''}`;
+            // Add 'group' class to handle hover visibility of edit button
+            div.className = `flex gap-4 max-w-3xl mx-auto justify-end group`;
 
             let contentHtml = '';
 
-            // Render Images (User upload)
+            // Extract images
+            const images = turn.parts
+                .filter(p => p.inline_data)
+                .map(p => `data:${p.inline_data.mime_type};base64,${p.inline_data.data}`);
+
+            // Extract text
+            const textPart = turn.parts.find(p => p.text);
+            const text = textPart ? textPart.text : '';
+
+            // Render Images
             if (images.length > 0) {
-                contentHtml += `<div class="flex flex-wrap gap-2 mb-2 ${role === 'user' ? 'justify-end' : ''}">`;
+                contentHtml += `<div class="flex flex-wrap gap-2 mb-2 justify-end">`;
                 images.forEach(src => {
                     contentHtml += `<img src="${src}" class="h-24 rounded border border-slate-600">`;
                 });
@@ -489,19 +640,32 @@
 
             // Render Text
             if (text) {
-                const bgClass = role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200';
-                contentHtml += `<div class="${bgClass} px-4 py-3 rounded-lg max-w-[85%] text-sm whitespace-pre-wrap leading-relaxed shadow">${text}</div>`; // Simple text for user input
+                contentHtml += `<div class="bg-blue-600 text-white px-4 py-3 rounded-lg max-w-[85%] text-sm whitespace-pre-wrap leading-relaxed shadow relative">
+                    ${text}
+                </div>`;
             }
 
-            div.innerHTML = role === 'user'
-                ? `<div class="flex flex-col items-end space-y-2">${contentHtml}</div><div class="w-8 h-8 rounded-full bg-slate-500 flex items-center justify-center text-xs font-bold text-white shrink-0">You</div>`
-                : `...`; // Model handled separately
+            // Edit Button (Visible on hover)
+            const editBtn = `
+                <button onclick="startEditing(${index})" class="self-start mt-2 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition p-1" title="编辑">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+            `;
+
+            div.innerHTML = `
+                ${editBtn}
+                <div class="flex flex-col items-end space-y-2">${contentHtml}</div>
+                <div class="w-8 h-8 rounded-full bg-slate-500 flex items-center justify-center text-xs font-bold text-white shrink-0">You</div>
+            `;
 
             chatContainer.appendChild(div);
-            scrollToBottom();
         }
 
-        function appendModelResponse(parts) {
+        function renderModelTurn(turn) {
+            // Re-use logic from old appendModelResponse but adapted for object input
+            // The old appendModelResponse took `parts`. `turn` is `{role: 'model', parts: [...]}`
+            const parts = turn.parts;
+            
             const div = document.createElement('div');
             div.className = "flex gap-4 max-w-3xl mx-auto";
 
@@ -517,7 +681,6 @@
                     if (part.text) {
                         thoughtsHtml += `<div class="thought-box mb-1">🤔 <strong>Thinking:</strong> ${marked.parse(part.text)}</div>`;
                     }
-                    // Thoughts can contain images too (intermediate steps)
                     if (part.inlineData || part.inline_data) {
                         const imgData = part.inlineData ? part.inlineData.data : part.inline_data.data;
                         thoughtsHtml += `<div class="thought-box mb-1"><img src="data:image/png;base64,${imgData}" class="max-h-48 rounded opacity-70" title="Intermediate thought image"></div>`;
@@ -544,7 +707,6 @@
                 }
             });
 
-            // Keep consistent styling with welcome message
             let fullHtml = `<div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shrink-0">AI</div><div class="flex-1 bg-slate-800 p-4 rounded-lg rounded-tl-none shadow text-slate-200 text-sm leading-relaxed overflow-hidden">`;
 
             if (hasThought) {
@@ -556,8 +718,8 @@
 
             div.innerHTML = fullHtml;
             chatContainer.appendChild(div);
-            scrollToBottom();
         }
+
 
         function appendError(msg) {
             const div = document.createElement('div');
